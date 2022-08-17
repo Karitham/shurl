@@ -12,7 +12,7 @@ import (
 
 func TestServer_GetKey(t *testing.T) {
 	s := NewMockStore()
-	s.GetFunc.SetDefaultReturn([]byte("ABCD"), nil)
+	s.GetFunc.SetDefaultReturn("ABCD", nil)
 
 	c := NewMockCoder()
 	c.DecodeStringFunc.SetDefaultReturn([]byte("https://kar.moe"), nil)
@@ -25,7 +25,7 @@ func TestServer_GetKey(t *testing.T) {
 		{
 			name: "basic",
 			s: &Server{
-				store: s,
+				store: func() Store { return s },
 				coder: c,
 			},
 			key: "ABCD",
@@ -67,7 +67,7 @@ func TestServer_SetKey(t *testing.T) {
 		{
 			name: "basic",
 			s: &Server{
-				store: NewMockStore(),
+				store: func() Store { return NewMockStore() },
 				gen:   g,
 				coder: c,
 			},
@@ -86,8 +86,8 @@ func TestServer_SetKey(t *testing.T) {
 				nil,
 			)
 			tt.s.newShortURL(r, req)
-			if r.Body.String() != tt.want {
-				t.Errorf("test failed, got %s wanted %s", r.Body.String(), tt.want)
+			if r.Code != http.StatusOK {
+				t.Errorf("Status code: %d, got %s", r.Code, r.Body.String())
 			}
 		})
 	}

@@ -10,8 +10,8 @@ import (
 
 //go:generate go-mockgen -f github.com/Karitham/shurl/server -i Store -o store_mock.go
 type Store interface {
-	Get(key []byte) ([]byte, error)
-	Set(key, value []byte) error
+	Get(key string) (string, error)
+	Set(key, value string) error
 }
 
 //go:generate go-mockgen -f github.com/Karitham/shurl/server -i Generator -o generator_mock.go
@@ -25,7 +25,7 @@ type Coder interface {
 	EncodeToString([]byte) string
 }
 
-func NewServer(prefix string, s Store, g Generator, c Coder) http.Handler {
+func NewServer(s func() Store, g Generator, c Coder) http.Handler {
 	srv := &Server{
 		store: s,
 		gen:   g,
@@ -33,16 +33,13 @@ func NewServer(prefix string, s Store, g Generator, c Coder) http.Handler {
 	}
 
 	r := chi.NewMux()
-	r.Route(prefix, func(r chi.Router) {
-		r.Get("/{key}", srv.redirectFromURL)
-		r.Put("/", srv.newShortURL)
-	})
-
+	r.Get("/{key}", srv.redirectFromURL)
+	r.Put("/", srv.newShortURL)
 	return r
 }
 
 type Server struct {
-	store Store
+	store func() Store
 	gen   Generator
 	coder Coder
 }
@@ -60,13 +57,13 @@ func (s *Server) redirectFromURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	val, err := s.store.Get(decoded)
+	val, err := s.store().Get(string(decoded))
 	if err != nil {
 		http.Error(w, "Error getting key", http.StatusInternalServerError)
 		return
 	}
 
-	http.Redirect(w, r, string(val), http.StatusMovedPermanently)
+	http.Redirect(w, r, val, http.StatusMovedPermanently)
 }
 
 func (s *Server) newShortURL(w http.ResponseWriter, r *http.Request) {
@@ -83,10 +80,8 @@ func (s *Server) newShortURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.store.Set(key, []byte(u)); err != nil {
+	if err := s.store().Set(string(key), u); err != nil {
 		http.Error(w, "Error getting key", http.StatusInternalServerError)
 		return
 	}
-
-	w.Write([]byte(s.coder.EncodeToString(key)))
 }

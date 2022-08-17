@@ -1,70 +1,49 @@
 package db
 
 import (
-	"errors"
+	"database/sql"
+	"os"
+	"sync"
 
-	bolt "go.etcd.io/bbolt"
+	"github.com/Karitham/shurl/server"
+	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/stdlib"
 )
 
-type Store struct {
-	db        *bolt.DB
-	filepath  string
-	urlBucket string
+var o sync.Once
+var db Database
+
+type Database struct {
+	db *sql.DB
 }
 
-// New returns a new bbolt store and a function to close it.
-func New(filepath string) (s *Store, cancel func(), err error) {
-	s = &Store{
-		filepath:  filepath,
-		urlBucket: "URLS",
-	}
-
-	db, err := bolt.Open(filepath, 0666, nil)
-	if err != nil {
-		return s, nil, err
-	}
-
-	tx, err := db.Begin(true)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	_, err = tx.CreateBucketIfNotExists([]byte(s.urlBucket))
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tx.Commit()
-
-	s.db = db
-
-	return s,
-		func() { db.Close() },
-		nil
-}
-
-func (s *Store) Get(key []byte) ([]byte, error) {
-	var value []byte
-	err := s.db.View(func(tx *bolt.Tx) error {
-		value = tx.Bucket([]byte(s.urlBucket)).Get(key)
-		if value == nil || len(value) < 3 {
-			return errors.New("value not found")
+// DB returns the global database instance
+func DB() server.Store {
+	o.Do(func() {
+		config, err := pgx.ParseConfig(os.Getenv("DATABASE_URL"))
+		if err != nil {
+			panic(err)
 		}
-
-		return nil
+		config.PreferSimpleProtocol = true
+		db = Database{db: stdlib.OpenDB(*config)}
 	})
+
+	return db
+}
+
+func (db Database) Get(key string) (string, error) {
+	var value string
+	err := db.db.QueryRow("SELECT value FROM urls WHERE key = $1 LIMIT 1", key).Scan(&value)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	return value, nil
 }
 
-func (s *Store) Set(key, value []byte) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
-		err := tx.Bucket([]byte(s.urlBucket)).Put(key, value)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+func (db Database) Set(key, value string) error {
+	_, err := db.db.Exec("INSERT INTO urls (key, value) VALUES ($1, $2)", key, value)
+	if err != nil {
+		return err
+	}
+	return nil
 }

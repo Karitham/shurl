@@ -19,14 +19,7 @@ func main() {
 	// Encoder
 	coder := base64.RawURLEncoding
 
-	store, cancel, err := db.New("shurl.db")
-	if err != nil {
-		log.Fatal("error initializing the store", err)
-	}
-	defer cancel()
-
-	h := server.NewServer("/shurl", store, gen, coder)
-
+	h := server.NewServer(db.DB, gen, coder)
 	log.Println("serving on :8080")
 	if err := http.ListenAndServe(":8080", h); err != nil {
 		log.Println("error serving, exiting", err)
